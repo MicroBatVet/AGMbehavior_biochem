@@ -1,0 +1,368 @@
+# Statistical Analysis for African Green Monkey biochemical data.
+# This R code reflects the analysis done as part of a project investigating if enrichment can reduce stress in African Green Monkeys.
+# Example data is provided.  
+
+#Load required packages and datasets
+library(readxl)
+library(lme4)
+library(mice)
+library(lmerTest)
+library(mitml)
+library(broom.mixed)
+library(AICcmodavg)
+library(miceadds)
+library(psych)
+library(ggplot2)
+
+#Load dataset
+
+data <- read_excel("~/location_of_file/file_name.xlsx", 
+                   sheet = "Combined", col_types = c("text",   #sheet specified with control and treatment results
+                                                     "numeric", "numeric", "numeric", 
+                                                     "numeric", "numeric", "numeric", 
+                                                     "numeric", "numeric", "numeric", 
+                                                     "numeric", "numeric", "text"))
+View(data)  #view dataset
+
+#Begin prep of correlation matrix as we do not want to use correlated variables for mixed models or for multiple imputation matrix.
+data <- as.data.frame(data)
+data_cors <- corr.test(sapply(data, as.numeric), method = "spearman")
+c <- data_cors  #r values from corr.test result
+cc <- abs (r > 0.3)  #select anything more than a weak correlation
+cc #write to CSV value as will use to make sure correlated variables not used as part of MICE imputation methods
+#write.csv(cc, file = "Name_of_file.csv", row.names = TRUE)
+
+
+#Eliminate outliers for each biochemical parameter
+# Calculate the IQR for plasma cortisol
+Q1_pc <- quantile(data$Plasma_cortisol, 0.25)
+Q3_pc <- quantile(data$Plasma_cortisol, 0.75)
+IQR_pc <- Q3_pc - Q1_pc
+
+# Define a lower and upper bound for outliers
+lower_bound_pc <- Q1_pc - 1.5 * IQR_pc
+upper_bound_pc <- Q3_pc + 1.5 * IQR_pc
+
+# Identify outliers
+outliers_pc <- data %>%
+  filter(Plasma_cortisol < lower_bound_pc | Plasma_cortisol > upper_bound_pc)
+
+# Remove outliers from the dataset
+plasma_cortisol <- data %>%
+  filter(!(Plasma_cortisol < lower_bound_pc | Plasma_cortisol > upper_bound_pc))
+
+str(plasma_cortisol)
+
+#Eliminate outliers for each biochemical parameter
+# Calculate the IQR for fecal cortisol
+Q1_fc <- quantile(data$Cortisol_fecal, 0.25, na.rm = TRUE)
+Q3_fc <- quantile(data$Cortisol_fecal, 0.75, na.rm = TRUE)
+IQR_fc <- Q3_fc - Q1_fc
+
+# Define a lower and upper bound for outliers
+lower_bound_fc <- Q1_fc - 1.5 * IQR_fc
+upper_bound_fc <- Q3_fc + 1.5 * IQR_fc
+
+# Identify outliers
+outliers_fc <- data %>%
+  filter(Cortisol_fecal < lower_bound_fc | Cortisol_fecal > upper_bound_fc)
+
+# Remove outliers from the dataset
+Cortisol_fecal <- data %>%
+  filter(!(Cortisol_fecal < lower_bound_fc | Cortisol_fecal > upper_bound_fc))
+
+str(Cortisol_fecal)
+
+#Eliminate outliers for each biochemical parameter
+# Calculate the IQR for plasma cortisol
+Q1_endorphs <- quantile(data$beta_endorphs, 0.25, na.rm = TRUE)
+Q3_endorphs <- quantile(data$beta_endorphs, 0.75, na.rm = TRUE)
+IQR_endorphs <- Q3_endorphs - Q1_endorphs
+
+# Define a lower and upper bound for outliers
+lower_bound_endorphs <- Q1_endorphs - 1.5 * IQR_endorphs
+upper_bound_endorphs <- Q3_endorphs + 1.5 * IQR_endorphs
+
+# Identify outliers
+outliers_endorphs <- data %>%
+  filter(beta_endorphs < lower_bound_endorphs | beta_endorphs > upper_bound_endorphs)
+
+# Remove outliers from the dataset
+beta_endorphs <- data %>%
+  filter(!(beta_endorphs < lower_bound_endorphs | beta_endorphs > upper_bound_endorphs))
+
+str(beta_endorphs)
+
+#Eliminate outliers for each biochemical parameter
+# Calculate the IQR for plasma cortisol
+Q1_l <- quantile(data$lysozyme, 0.25, na.rm = TRUE)
+Q3_l <- quantile(data$lysozyme, 0.75, na.rm = TRUE)
+IQR_l <- Q3_l - Q1_l
+
+# Define a lower and upper bound for outliers, Seo, S. (2006). A review and comparison of methods for detecting outliers in univariate data sets (Doctoral dissertation, University of Pittsburgh).
+lower_bound_l <- Q1_l - 1.5 * IQR_l
+upper_bound_l <- Q3_l + 1.5 * IQR_l
+
+# Identify outliers
+outliers_l <- data %>%
+  filter(lysozyme < lower_bound_l | lysozyme > upper_bound_l)
+
+# Remove outliers from the dataset
+lysozyme <- data %>%
+  filter(!(lysozyme < lower_bound_l | lysozyme > upper_bound_l))
+
+str(lysozyme)
+
+#Lysozymes and fecal cortisol has missing values.
+#Beta-endorphins and plasma cortisol do not have missing values.
+#Build models first for Beta-endorphins and plasma cortiol.
+
+#Check distrubtion of plasma cortisol
+shapiro.test(plasma_cortisol$Plasma_cortisol)
+shapiro.test(sqrt(plasma_cortisol$Plasma_cortisol))  #Normal guassian distribution
+
+null_pc <- lmer(sqrt(Plasma_cortisol) ~ 1 + (1|Monkey), data=plasma_cortisol) #null model
+model_pc1 <- lmer(sqrt(Plasma_cortisol) ~ as.factor(Month) + Wt + Time + Status + (1|Monkey), data = plasma_cortisol)
+summary(null_pc)
+summary(model_pc1)
+
+
+#Test to make sure assumptions are true.
+#linearity
+Linearity<-plot(resid(model_pc1), plasma_cortisol$Plasma_cortisol)
+
+
+#Homogeneity of Variance
+plasma_cortisol$model_pca.resids <- residuals(model_pc1) #extracts the residuals and places them in a new column
+plasma_cortisol$model_pca.resids.absolute <-abs(plasma_cortisol$model_pca.resids) #creates a new column with the absolute value of the residuals
+plasma_cortisol$model_pca.resids.absolute2 <- plasma_cortisol$model_pca.resids.absolute^2 #squares the absolute values of the residuals to provide the more robust estimate
+Levene.Model.pc <- lm(model_pca.resids.absolute2 ~ Monkey, data=plasma_cortisol) #ANOVA of the squared residuals
+anova(Levene.Model.pc) #displays the results
+
+plot(fitted(model_pc1), resid(model_pc1))  #plot version
+abline(h = 0, col = "red")  # Add a horizontal line at 0
+
+#Independence of residuals
+durbinWatsonTest(plasma_cortisol$model_pca.resids)
+
+#Residuals of models normally distributed
+# Histogram and Q-Q plot
+hist(resid(model_pc1), col = "lightblue", main = "Histogram of Residuals")
+
+# Q-Q plot
+qqnorm(resid(model_pc1))
+qqline(resid(model_pc1))
+
+#normality of residuals
+shapiro.test(resid(model_pc1))
+
+#Back transform the results.
+back_transformed_estimates <- fixef(model_pc1)^2
+
+# Back-transform the confidence intervals
+conf_int <- confint(model_pc1)
+conf_int <- conf_int^2
+
+# Print the back-transformed results
+print(back_transformed_estimates)
+print(conf_int)
+
+#Due to violations of assumptions for homogeinity of variance when creating beta endorphin models, must run robust mixed models
+shapiro.test(beta_endorphs$beta_endorphs) #normal
+
+library(robustlmm)  #Must not use matrix package 1.6.2 as otherwise will be errors with lme4.
+
+null_beta <- rlmer((beta_endorphs) ~ 1 + (1|Monkey), data=beta_endorphs)
+model_beta_robust <- rlmer((beta_endorphs) ~ as.factor(Month) + Wt + Time + Status + (1|Monkey), data = beta_endorphs)
+summary(null_beta)
+summary(model_beta_robust)
+
+#robustlmm diagnostic plots
+plot.rlmerMod(model_beta_robust)
+
+#Independence of residuals, from car pacakge
+durbinWatsonTest(residuals(model_beta_robust))
+
+library(parameters)
+model_parameters(model_beta_robust) #for p-values
+
+
+#Lysozymes
+shapiro.test(lysozyme$lysozyme)
+shapiro.test((lysozyme$lysozyme)) 
+
+null_pc <- glmer((lysozyme) ~ 1 + (1|Monkey), data=lysozyme, family = Gamma(link = "inverse"))
+model_lyz <- glmer(lysozyme ~ as.factor(Month) + Wt + Time + Status + (1|Monkey), data = lysozyme, family = Gamma(link = "inverse"))
+
+summary(null_pc)
+summary(model_lyz)
+
+#violates assumptions so run robust mixed models.
+
+null_lyso <- rlmer(lysozyme ~ 1 + (1|Monkey), data=lysozyme)
+model_lyso_robust <- rlmer(lysozyme ~ as.factor(Month) + Wt + Time + Status + (1|Monkey), data = lysozyme)
+summary(null_lyso)
+summary(model_lyso_robust)
+
+#robustlmm diagnostic plots
+plot.rlmerMod(model_lyso_robust)
+
+#Independence of residuals, from car pacakge
+durbinWatsonTest(residuals(model_lyso_robust))
+
+#Calculate p-values
+model_parameters(model_lyso_robust)
+
+#Post-hoc for time
+library(emmeans)
+tukey <- emmeans(model_lyso_robust)
+plot(tukey)
+
+
+#Add back Nas for fecal cortisol data
+nas <- data[is.na(data$Cortisol_fecal), ]
+Cortisol_fecal1 <- rbind(Cortisol_fecal, nas)  #16 nas
+
+
+#Import MICE matrix and impute missing values by group using miceadds package and mice package
+mice_matrix_good <- read_excel("Mice_Matrix.xlsx")  #read in mice matrix.  Very specific set-up, see matrix file in this repository for format.
+mice_matrix_good <- as.data.frame(mice_matrix_good)
+#Need to drop first row that was assigned a new name.  PLUS it is important to rename each row with column names
+rownames(mice_matrix_good) <- mice_matrix_good$...1
+drops <- c("...1")
+mm <- mice_matrix_good[ , !names(mice_matrix_good) %in% drops]
+head(mm)  #check that it looks good.
+mm <- as.matrix(mm)
+
+#make into matrix for R packages and factor time and status
+Cortisol_fecal1$Monkey <- as.factor(Cortisol_fecal1$Monkey)
+Cortisol_fecal1$Month <- as.factor(Cortisol_fecal1$Month)
+Cortisol_fecal1$Time <- as.factor(Cortisol_fecal1$Time)
+Cortisol_fecal1$Status <- as.factor(Cortisol_fecal1$Status)
+
+#Need to specify imputation method first and skip columns indicated by "".
+summary(Cortisol_fecal1) #to determine which columns have missing data, 
+imputation_methods <- c("", "", "", "", "",  #Monkey, month, wt, time, 
+                "","","","", #wbc, neuts, lymphs, monocytes,
+                "","cart","", "", "") #pc, fc, beta, lysozyme, status
+
+
+#create dataset for analysis without missing variables
+imputed_data_fc <- mice(Cortisol_fecal1, m=20, predictorMatrix = mm, group = Cortisol_fecal1$Status, imputationFunction = imputation_methods, set.seed(202)) #set seed for reproducibility.
+
+#Here is the code to display a few density plots
+densityplot(imputed_data_fc, ~Cortisol_fecal)  #Looks reasonable
+
+#Generalized linear mixed models with individual as random effect
+#First run null model
+AGM_Null <- with(imputed_data_fc, lmer(log(Cortisol_fecal) ~ 1 + (1|Monkey)))  #log to normalize data and allow guassian family
+summary(pool(AGM_Null)) 
+print(AGM_Null)
+
+AGM_model1 <- with(imputed_data_fc, lmer(log(Cortisol_fecal) ~ Status + Time + Wt + as.factor(Month) + (1|Monkey))) #log to normalize data and allow guassian family
+summary(pool(AGM_model1))
+print(AGM_model1)
+
+#There is not an easy way to test the models for assumptions, therefore will do so on individual datasets after using complete()
+fc_data <- complete(imputed_data_fc, 'long')  #.imp will give the imputation dataset number
+
+#The below code is an example for the first 3 of the imputed datasets.  Results should be averaged similar to the pooling of the model results.
+fc_data1 <- fc_data[fc_data$.imp == 1, ]
+fc_data2 <- fc_data[fc_data$.imp == 2, ]
+fc_data3 <- fc_data[fc_data$.imp == 3, ]
+
+fc1 <- lmer(log(Cortisol_fecal) ~ Status + Time + Wt + as.factor(Month) + (1|Monkey), data = fc_data1)
+summary(fc1)
+
+Linearity<-plot(resid(fc1), fc_data1$Cortisol_fecal)
+
+#Homogeneity of Variance
+fc_data1$model_fc1.resids <- residuals(fc1) #extracts the residuals and places them in a new column
+fc_data1$model_fc1.resids.absolute <-abs(fc_data1$model_fc1.resids) #creates a new column with the absolute value of the residuals
+fc_data1$model_fc1.resids.absolute2 <- fc_data1$model_fc1.resids.absolute^2 #squares the absolute values of the residuals to provide the more robust estimate
+Levene.Model.fc1 <- lm(model_fc1.resids.absolute2 ~ Monkey, data=fc_data1) #ANOVA of the squared residuals
+anova(Levene.Model.fc1) #displays the results
+
+plot(fitted(fc1), resid(fc1))  #plot version
+abline(h = 0, col = "red")  # Add a horizontal line at 0
+
+#Independence of residuals
+durbinWatsonTest(fc_data1$model_fc1.resids)
+
+#Residuals of models normally distributed
+# Histogram and Q-Q plot
+hist(resid(fc1), col = "lightblue", main = "Histogram of Residuals")
+
+# Q-Q plot
+qqnorm(resid(fc1))
+qqline(resid(fc1))
+
+#normality of residuals
+shapiro.test(resid(fc1))
+
+fc2 <- lmer(log(Cortisol_fecal) ~ Status + Time + Wt + as.factor(Month) + (1|Monkey), data = fc_data2)
+summary(fc2)
+
+Linearity<-plot(resid(fc2), fc_data2$Cortisol_fecal)
+
+#Homogeneity of Variance
+fc_data2$model_fc2.resids <- residuals(fc2) #extracts the residuals and places them in a new column
+fc_data2$model_fc2.resids.absolute <-abs(fc_data2$model_fc2.resids) #creates a new column with the absolute value of the residuals
+fc_data2$model_fc2.resids.absolute2 <- fc_data2$model_fc2.resids.absolute^2 #squares the absolute values of the residuals to provide the more robust estimate
+Levene.Model.fc2 <- lm(model_fc2.resids.absolute2 ~ Monkey, data=fc_data2) #ANOVA of the squared residuals
+anova(Levene.Model.fc2) #displays the results
+
+plot(fitted(fc2), resid(fc2))  #plot version
+abline(h = 0, col = "red")  # Add a horizontal line at 0
+
+#Independence of residuals
+durbinWatsonTest(fc_data2$model_fc2.resids)
+
+#Residuals of models normally distributed
+# Histogram and Q-Q plot
+hist(resid(fc2), col = "lightblue", main = "Histogram of Residuals")
+
+# Q-Q plot
+qqnorm(resid(fc2))
+qqline(resid(fc2))
+
+#normality of residuals
+shapiro.test(resid(fc2))
+
+fc3 <- lmer(log(Cortisol_fecal) ~ Status + Time + Wt + as.factor(Month) + (1|Monkey), data = fc_data3)
+summary(fc3)
+
+Linearity<-plot(resid(fc3), fc_data3$Cortisol_fecal)
+
+#Homogeneity of Variance
+fc_data3$model_fc3.resids <- residuals(fc3) #extracts the residuals and places them in a new column
+fc_data3$model_fc3.resids.absolute <-abs(fc_data3$model_fc3.resids) #creates a new column with the absolute value of the residuals
+fc_data3$model_fc3.resids.absolute2 <- fc_data3$model_fc3.resids.absolute^2 #squares the absolute values of the residuals to provide the more robust estimate
+Levene.Model.fc3 <- lm(model_fc3.resids.absolute2 ~ Monkey, data=fc_data3) #ANOVA of the squared residuals
+anova(Levene.Model.fc3) #displays the results
+
+plot(fitted(fc3), resid(fc3))  #plot version
+abline(h = 0, col = "red")  # Add a horizontal line at 0
+
+#Independence of residuals
+durbinWatsonTest(fc_data3$model_fc3.resids)
+
+#Residuals of models normally distributed
+# Histogram and Q-Q plot
+hist(resid(fc3), col = "lightblue", main = "Histogram of Residuals")
+
+# Q-Q plot
+qqnorm(resid(fc3))
+qqline(resid(fc3))
+
+#normality of residuals
+shapiro.test(resid(fc3))
+
+#By performing log of dep. variable then our assumptions hold true
+AGM_model1 <- with(imputed_data_fc, lmer(log(Cortisol_fecal) ~ Status + Time + Wt + as.factor(Month) + (1|Monkey))) #log to normalize data and allow guassian family
+summary(pool(AGM_model1))
+print(AGM_model1)
+model_parameters(AGM_model1)
+
+
+
