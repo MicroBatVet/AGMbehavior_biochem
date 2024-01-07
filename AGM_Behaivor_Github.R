@@ -1,3 +1,8 @@
+
+#This code excludes all the clean-up and preparation.  Below is the loaded data for each biochemical variable,
+#the PCA, and the models.  Clean example data is loaded into this repository.
+
+#Beta-endorphins
 #import as pca_data
 pca_data1 <- read_excel("name_of_file.xlsx", 
                             col_types = c("skip", "numeric", "numeric", 
@@ -161,4 +166,5 @@ summary(model_reduced)  #No interactions were significant when tested.
 plot(model_reduced)
 
 
+#
 
