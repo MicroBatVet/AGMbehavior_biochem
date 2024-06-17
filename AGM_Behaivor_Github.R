@@ -33,6 +33,7 @@ pca_data1 <- read_excel("name_of_file.xlsx",
 pca_data1 <- as.data.frame(pca_data1)
 pca_data <- pca_data1[, -c(1, 2, 37)]  # Exclude timepoint, Monkey, and beta_endorphins
 pca_data <- pca_data1[, -c(1, 2, 3, 38:73)] #Exclude timepoint, Monkey, beta_endorphins, and principal components (if in saved file and reloading)
+#The example data contains example principal componets, so you will need to include 38:73 if running the example data.
 
 # Perform PCA
 pca_result <- prcomp(pca_data, scale. = TRUE, center = TRUE)
@@ -113,6 +114,9 @@ prior1 <- list(R = list(V = 1, nu = 1.002), G = list(G1 = list(V =1,
 iterations <- 1300000
 burnin <- 300000  # Discard the first 300,000 iterations
 
+#The above code will need to be modified according to your specific study
+#These values were based upon the literature and performed well for our data.
+
 # Create the linear regression model
 # Below are several examples of models created but not the exhaustive list as backward regresison was completed and only variables retained that were significant.
 # Timepoint and the treatment/control groups were always included in models.
@@ -166,5 +170,6 @@ summary(model_reduced)  #No interactions were significant when tested.
 plot(model_reduced)
 
 
-#
+#This code was replicated with backward regression for each of the variables assessed.
+#This notebook does not contain all possible models nor does it include the code used to organize, clean, or prepare the data for the analysis.
 
