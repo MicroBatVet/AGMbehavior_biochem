@@ -1,6 +1,7 @@
-# Statistical Analysis for African Green Monkey biochemical data.
-# This R code reflects the analysis done as part of a project investigating if enrichment can reduce stress in African Green Monkeys.
-# Example data is provided.  
+# This notebook provides the R-code used for the analysis of African Green biochemical data for the manuscript
+# "Assessing Stress in African Green Monkeys through Novel and Classical Salivary and Blood Biomarkers" 
+# This R code reflects the analysis done as part of a Master's project investigating if enrichment can reduce stress in African Green Monkeys.
+# Example data is provided as an excel file.  
 
 #Load required packages and datasets
 library(readxl)
